@@ -1089,3 +1089,55 @@ input[type="file"] {
     color: #92400e;
 }
 
+/* Footer */
+.site-footer {
+    margin-top: 30px;
+    padding: 16px 0;
+    border-top: 1px solid #1f2937;
+    color: #9ca3af;
+}
+.footer-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.footer-made-by {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.footer-logo {
+    height: 20px;
+    width: auto;
+    filter: brightness(0) saturate(100%) invert(27%) sepia(51%) saturate(2878%) hue-rotate(346deg) brightness(104%) contrast(97%);
+}
+.footer-links {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+.footer-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 9999px;
+    border: 1px solid #1f2937;
+    background: #0b1220;
+    color: #e5e7eb;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+.footer-link:hover {
+    background: #111827;
+    transform: translateY(-1px);
+}
+.footer-icon {
+    opacity: 0.9;
+}
+.theme-light .site-footer { border-top-color: #e0e0e0; color: #6b7280; }
+.theme-light .footer-link { background: #ffffff; color: #1f2937; border-color: #e0e0e0; }
+.theme-light .footer-link:hover { background: #f5f5f5; }
+
