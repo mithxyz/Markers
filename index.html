@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Markers - Timecode Cues</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1 class="header-title">
+                <img src="mlogo2.png" alt="M" class="header-logo-m">
+                <span>arkers</span>
+            </h1>
+            <p>A tool to create timecoded cues to your music tracks for choreography and lighting</p>
+            <div class="warning-banner" role="alert">
+                ⚠️ Work is not auto-saved. Reloading or leaving will lose changes. Use Export → "Export Bundle (.zip)" to save and reload later.
+            </div>
+        </header>
+
+        <div class="upload-section">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-content">
+                    <div class="upload-icon">📁</div>
+                    <h3>Upload Audio File</h3>
+                    <p id="uploadText">Drag and drop your audio file here or click to browse</p>
+                    <input type="file" id="audioFile" accept="audio/*,video/*,audio/mpeg,audio/wav,audio/mp4,audio/ogg,video/mp4,video/webm,video/ogg" capture="microphone">
+                    <button class="upload-btn" id="uploadBtn">
+                        Choose File
+                    </button>
+                    <div style="margin-top:10px;">
+                        <button class="upload-btn" id="loadProjectBtn" title="Load a saved project (.zip)">Load Project (.zip)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="player-section" id="playerSection" style="display: none;">
+            <div class="audio-controls">
+                <audio id="audioPlayer" controls></audio>
+                <video id="videoPlayer" controls style="display:none; max-width:100%; height:360px; background:#000;"></video>
+                <div class="time-display">
+                    <span id="currentTime">0:00</span> / <span id="duration">0:00</span>
+                </div>
+            </div>
+            
+            <div class="cue-controls">
+                <button id="addCueBtn" class="btn btn-primary">Add Cue at Current Time</button>
+                <button id="playFromStart" class="btn btn-secondary">Play from Start</button>
+                <div class="export-dropdown" id="exportDropdown">
+                    <button id="exportBtn" class="btn btn-success">Export ▼</button>
+                    <div class="export-menu" id="exportMenu" style="display:none;">
+                        <button class="export-item" data-type="json">Export JSON</button>
+                        <button class="export-item" data-type="csv">CuePoints - CSV</button>
+                        <button class="export-item" data-type="md">Export Markdown</button>
+                        <button class="export-item" data-type="pdf">Export PDF</button>
+                        <button class="export-item" data-type="sheet">Spreadsheet - CSV</button>
+                        <button class="export-item" data-type="zip">Export Bundle (.zip)</button>
+                    </div>
+                </div>
+                <button id="importCues" class="btn btn-secondary">Import</button>
+            </div>
+        </div>
+
+        <div class="main-content" id="mainContent" style="display: none;">
+            <div class="left-column">
+                <div class="waveform-section" id="waveformSection">
+                    <div class="waveform-instructions">
+                        <p><strong>Cue Markers:</strong> Press M to add a new cue at current time • Right-click ti add a cue on the waveform</p>
+                        <p><strong>Waveform Controls:</strong> Left-click to jump to time • Right-click to add marker • Drag markers to move them</p>
+                        <p><strong>Quick Cue Creation:</strong> A popup appears when creating cues for instant title entry • Press Enter to save or Escape to cancel</p>
+                        <details class="controls-help">
+                            <summary>Show Controls Guide</summary>
+                            <div class="controls-grid">
+                                <div>
+                                    <h4>Mouse</h4>
+                                    <ul>
+                                        <li>Left click: Jump to time</li>
+                                        <li>Right click: Add cue</li>
+                                        <li>Drag background: Pan</li>
+                                        <li>Drag cue: Move cue (shows time popup)</li>
+                                        <li>Mouse wheel: Zoom in/out</li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4>Keyboard</h4>
+                                    <ul>
+                                        <li>Space or K: Play/Pause</li>
+                                        <li>← / →: Seek ±1s (Shift: ±5s, Alt: ±0.1s)</li>
+                                        <li>, / .: Nudge −/+0.05s</li>
+                                        <li>+ / − / 0: Zoom in/out/reset</li>
+                                        <li>M: Add cue at current time</li>
+                                        <li>E: Edit first cue name</li>
+                                        <li>[ / ]: Jump to previous/next cue</li>
+                                        <li>Enter: Save in quick popup</li>
+                                        <li>Escape: Cancel popup/modal</li>
+                                        <li>Ctrl+Enter: Save in modal</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                    <div class="zoom-controls">
+                        <button id="zoomOut" class="btn btn-secondary">🔍-</button>
+                        <span id="zoomLevel">100%</span>
+                        <button id="zoomIn" class="btn btn-secondary">🔍+</button>
+                        <button id="zoomReset" class="btn btn-secondary">Reset</button>
+                        <span class="zoom-info">Mouse wheel to zoom • Drag to pan</span>
+                    </div>
+                    <div class="waveform-container">
+                        <canvas id="waveformCanvas"></canvas>
+                        <div class="cue-markers" id="cueMarkers"></div>
+                        <div class="time-popup" id="timePopup" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="right-column">
+                <div class="cues-panel" id="cuesPanel">
+                    <div class="panel-header">
+                        <h3>Cue Markers</h3>
+                        <button id="settingsBtn" class="btn btn-secondary" title="Settings">⚙️</button>
+                    </div>
+                    <div class="cues-list" id="cuesList"></div>
+                </div>
+
+                <div class="settings-panel" id="settingsPanel" style="display: none;">
+                    <div class="panel-header">
+                        <h3>Settings</h3>
+                        <button id="closeSettingsBtn" class="btn btn-secondary" title="Close">✕</button>
+                    </div>
+                    <div class="settings-content">
+                        <div class="setting-group">
+                            <h4>Playback Behavior</h4>
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <input type="checkbox" id="pauseOnCuePopup" checked>
+                                    <span class="setting-text">Pause playback when cue popup is open</span>
+                                </label>
+                                <p class="setting-description">Automatically pauses audio when creating cues for precise placement</p>
+                            </div>
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <input type="checkbox" id="useFadeTimes" checked>
+                                    <span class="setting-text">Use fade times for cues</span>
+                                </label>
+                                <p class="setting-description">Enable fade time input and show fades as triangles on the timeline</p>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <h4>Display Options</h4>
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <input type="checkbox" id="showCueNumbers" checked>
+                                    <span class="setting-text">Show cue numbers on waveform</span>
+                                </label>
+                                <p class="setting-description">Display cue numbers on the waveform markers</p>
+                            </div>
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <input type="checkbox" id="useMarkerColor" checked>
+                                    <span class="setting-text">Color markers</span>
+                                </label>
+                                <p class="setting-description">Use a per-cue color for the marker line, dot, and label background</p>
+                            </div>
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <input type="checkbox" id="keepPlayheadInView" checked>
+                                    <span class="setting-text">Keep playhead in view</span>
+                                </label>
+                                <p class="setting-description">Automatically pan the timeline so the playhead stays visible while playing</p>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <h4>Fade Times</h4>
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <input type="checkbox" id="useFadeTimes" checked>
+                                    <span class="setting-text">Use fade times for cues</span>
+                                </label>
+                                <p class="setting-description">Automatically apply fade times to cues when importing or exporting</p>
+                            </div>
+                        </div>
+                        <div class="settings-actions">
+                            <button id="resetSettings" class="btn btn-secondary">Reset to Defaults</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Cue Popup -->
+        <div class="quick-cue-popup" id="quickCuePopup" style="display: none;">
+            <div class="quick-cue-content">
+                <h4>New Cue at <span id="quickCueTime"></span></h4>
+                <input type="text" id="quickCueName" placeholder="Enter cue title..." autofocus>
+                <div class="quick-cue-row" id="quickCueFadeRow">
+                    <input type="number" id="quickCueFade" placeholder="Fade (s)" min="0" step="0.1">
+                </div>
+                <div class="quick-cue-row" id="quickCueMarkerColorRow">
+                    <label style="display:block; font-size:0.9rem; margin-bottom:4px;">Marker Color</label>
+                    <input type="hidden" id="quickCueMarkerColor" value="#ff4444">
+                    <div class="color-dropdown" id="quickCueColorDropdown" data-target-input="quickCueMarkerColor">
+                        <button type="button" class="color-dropdown-toggle">
+                            <span class="color-swatch" style="background:#ff4444"></span>
+                            <span class="color-label">Red</span>
+                        </button>
+                        <div class="color-dropdown-menu">
+                            <div class="color-item" data-color="#ff4444" data-label="Red"><span style="background:#ff4444"></span>Red</div>
+                            <div class="color-item" data-color="#dc2626" data-label="Crimson"><span style="background:#dc2626"></span>Crimson</div>
+                            <div class="color-item" data-color="#f59e0b" data-label="Orange"><span style="background:#f59e0b"></span>Orange</div>
+                            <div class="color-item" data-color="#fde047" data-label="Yellow"><span style="background:#fde047"></span>Yellow</div>
+                            <div class="color-item" data-color="#22c55e" data-label="Green"><span style="background:#22c55e"></span>Green</div>
+                            <div class="color-item" data-color="#84cc16" data-label="Lime"><span style="background:#84cc16"></span>Lime</div>
+                            <div class="color-item" data-color="#06b6d4" data-label="Cyan"><span style="background:#06b6d4"></span>Cyan</div>
+                            <div class="color-item" data-color="#2563eb" data-label="Blue"><span style="background:#2563eb"></span>Blue</div>
+                            <div class="color-item" data-color="#1e3a8a" data-label="Navy"><span style="background:#1e3a8a"></span>Navy</div>
+                            <div class="color-item" data-color="#a855f7" data-label="Purple"><span style="background:#a855f7"></span>Purple</div>
+                            <div class="color-item" data-color="#ec4899" data-label="Pink"><span style="background:#ec4899"></span>Pink</div>
+                            <div class="color-item" data-color="#9ca3af" data-label="Gray"><span style="background:#9ca3af"></span>Gray</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="quick-cue-row">
+                    <textarea id="quickCueDescription" placeholder="Optional description..."></textarea>
+                </div>
+                <div class="quick-cue-actions">
+                    <button id="quickSave" class="btn btn-primary">Save</button>
+                    <button id="quickCancel" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal" id="cueModal" style="display: none;">
+            <div class="modal-content">
+                <h3>Edit Cue Point</h3>
+                <div class="form-group">
+                    <label for="cueNumber">Cue #:</label>
+                    <input type="text" id="cueNumber" readonly>
+                </div>
+                <div class="form-group">
+                    <label for="cueName">Title:</label>
+                    <input type="text" id="cueName" placeholder="Enter cue name">
+                </div>
+                <div class="form-group">
+                    <label for="cueTime">Time:</label>
+                    <input type="text" id="cueTime" readonly>
+                </div>
+                <div class="form-group" id="cueFadeGroup">
+                    <label for="cueFade">Fade Time (s):</label>
+                    <input type="number" id="cueFade" placeholder="0" min="0" step="0.1">
+                </div>
+                <div class="form-group" id="cueMarkerColorGroup">
+                    <label for="cueMarkerColor">Marker Color:</label>
+                    <input type="hidden" id="cueMarkerColor" value="#ff4444">
+                    <div class="color-dropdown" id="cueColorDropdown" data-target-input="cueMarkerColor">
+                        <button type="button" class="color-dropdown-toggle">
+                            <span class="color-swatch" id="cueMarkerSwatch" style="background:#ff4444"></span>
+                            <span class="color-label">Red</span>
+                        </button>
+                        <div class="color-dropdown-menu">
+                            <div class="color-item" data-color="#ff4444" data-label="Red"><span style="background:#ff4444"></span>Red</div>
+                            <div class="color-item" data-color="#dc2626" data-label="Crimson"><span style="background:#dc2626"></span>Crimson</div>
+                            <div class="color-item" data-color="#f59e0b" data-label="Orange"><span style="background:#f59e0b"></span>Orange</div>
+                            <div class="color-item" data-color="#fde047" data-label="Yellow"><span style="background:#fde047"></span>Yellow</div>
+                            <div class="color-item" data-color="#22c55e" data-label="Green"><span style="background:#22c55e"></span>Green</div>
+                            <div class="color-item" data-color="#84cc16" data-label="Lime"><span style="background:#84cc16"></span>Lime</div>
+                            <div class="color-item" data-color="#06b6d4" data-label="Cyan"><span style="background:#06b6d4"></span>Cyan</div>
+                            <div class="color-item" data-color="#2563eb" data-label="Blue"><span style="background:#2563eb"></span>Blue</div>
+                            <div class="color-item" data-color="#1e3a8a" data-label="Navy"><span style="background:#1e3a8a"></span>Navy</div>
+                            <div class="color-item" data-color="#a855f7" data-label="Purple"><span style="background:#a855f7"></span>Purple</div>
+                            <div class="color-item" data-color="#ec4899" data-label="Pink"><span style="background:#ec4899"></span>Pink</div>
+                            <div class="color-item" data-color="#9ca3af" data-label="Gray"><span style="background:#9ca3af"></span>Gray</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="cueDescription">Description:</label>
+                    <textarea id="cueDescription" placeholder="Optional description"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button id="saveCue" class="btn btn-primary">Save</button>
+                    <button id="deleteCue" class="btn btn-danger">Delete</button>
+                    <button id="cancelCue" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme" title="Toggle theme">🌙</button>
+    <script src="script.js"></script>
+</body>
+</html>
+
