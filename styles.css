@@ -1093,7 +1093,8 @@ input[type="file"] {
 .theme-light #ma3OverrideId,
 .theme-light #ma3SeqId,
 .theme-light #ma3TcId,
-.theme-light #ma3PageId {
+.theme-light #ma3PageId,
+.theme-light #projectTitle {
     background: white !important;
     color: #1f2937 !important;
     border-color: #e0e0e0 !important;
@@ -1103,7 +1104,8 @@ input[type="file"] {
 .theme-light #ma3OverrideId:focus,
 .theme-light #ma3SeqId:focus,
 .theme-light #ma3TcId:focus,
-.theme-light #ma3PageId:focus {
+.theme-light #ma3PageId:focus,
+.theme-light #projectTitle:focus {
     border-color: #2196F3 !important;
     outline: none;
 }

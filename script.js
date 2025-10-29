@@ -35,7 +35,8 @@ class MusicCueApp {
             ma3UseSeparateIds: false,
             ma3SeqId: 101,
             ma3TcId: 101,
-            ma3PageId: 101
+            ma3PageId: 101,
+            projectTitle: ''
         };
         
         this.wasPlayingBeforePopup = false;
@@ -366,6 +367,8 @@ class MusicCueApp {
         const seqEl = document.getElementById('ma3SeqId'); if (seqEl) seqEl.addEventListener('change', this.updateSetting.bind(this));
         const tcEl = document.getElementById('ma3TcId'); if (tcEl) tcEl.addEventListener('change', this.updateSetting.bind(this));
         const pageEl = document.getElementById('ma3PageId'); if (pageEl) pageEl.addEventListener('change', this.updateSetting.bind(this));
+        const projectTitleEl = document.getElementById('projectTitle');
+        if (projectTitleEl) projectTitleEl.addEventListener('input', this.updateSetting.bind(this));
 
         // Initialize custom color dropdowns
         this.initColorDropdown('quickCueColorDropdown');
@@ -476,6 +479,8 @@ class MusicCueApp {
         const seqEl = document.getElementById('ma3SeqId'); if (seqEl) seqEl.value = this.settings.ma3SeqId || this.settings.ma3OverrideId || this.settings.ma3Id || 101;
         const tcEl = document.getElementById('ma3TcId'); if (tcEl) tcEl.value = this.settings.ma3TcId || this.settings.ma3OverrideId || this.settings.ma3Id || 101;
         const pageEl = document.getElementById('ma3PageId'); if (pageEl) pageEl.value = this.settings.ma3PageId || this.settings.ma3OverrideId || this.settings.ma3Id || 101;
+        const projectTitleEl = document.getElementById('projectTitle');
+        if (projectTitleEl) projectTitleEl.value = this.settings.projectTitle || '';
 
         // Update visible project badge
         this.updateProjectBadge();
@@ -500,7 +505,7 @@ class MusicCueApp {
         this.settings[setting] = value;
         this.saveSettings();
         this.applySettings();
-        if (setting === 'ma3Id' || setting === 'ma3OverrideEnabled' || setting === 'ma3OverrideId' || setting === 'ma3UseSeparateIds' || setting === 'ma3SeqId' || setting === 'ma3TcId' || setting === 'ma3PageId') {
+        if (setting === 'ma3Id' || setting === 'ma3OverrideEnabled' || setting === 'ma3OverrideId' || setting === 'ma3UseSeparateIds' || setting === 'ma3SeqId' || setting === 'ma3TcId' || setting === 'ma3PageId' || setting === 'projectTitle') {
             this.updateProjectBadge();
         }
     }
@@ -529,7 +534,8 @@ class MusicCueApp {
             ma3UseSeparateIds: false,
             ma3SeqId: 101,
             ma3TcId: 101,
-            ma3PageId: 101
+            ma3PageId: 101,
+            projectTitle: ''
         };
         this.saveSettings();
         this.applySettings();
@@ -1724,7 +1730,7 @@ class MusicCueApp {
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        const base = this.mediaBasename || this.importedBasename || 'cues';
+        const base = this.getProjectTitle();
         const exportId = Math.max(1, Number(this.settings.ma3Id) || 101);
         a.download = `${exportId}_${base}.json`;
         a.click();
@@ -1732,7 +1738,7 @@ class MusicCueApp {
 
     exportCuesCsv() {
         const fps = 30;
-        const base = this.mediaBasename || this.importedBasename || 'cues';
+        const base = this.getProjectTitle();
         const trackName = base;
         const typeName = 'Lighting';
         const sorted = [...this.cues]
@@ -1756,7 +1762,7 @@ class MusicCueApp {
     }
 
     exportCuesSpreadsheet() {
-        const base = this.mediaBasename || this.importedBasename || 'cues';
+        const base = this.getProjectTitle();
         const sorted = [...this.cues]
             .sort((a, b) => a.time - b.time)
             .map((c, i) => ({
@@ -1817,20 +1823,28 @@ class MusicCueApp {
         return colorMap[color] || 'Custom';
     }
 
+    getProjectTitle() {
+        // Use custom project title if set, otherwise fall back to track name
+        if (this.settings?.projectTitle && this.settings.projectTitle.trim()) {
+            return this.settings.projectTitle.trim();
+        }
+        return this.mediaBasename || this.importedBasename || 'cues';
+    }
+
     updateProjectBadge() {
         const badge = document.getElementById('projectBadge');
         const idEl = document.getElementById('badgeId');
         const trackEl = document.getElementById('badgeTrack');
         if (!badge || !idEl || !trackEl) return;
         const id = Math.max(1, Number(this.settings?.ma3Id) || 101);
-        const base = this.mediaBasename || this.importedBasename || 'cues';
+        const base = this.getProjectTitle();
         idEl.textContent = `ID ${id}`;
         trackEl.textContent = base;
         badge.style.display = '';
     }
 
     exportCuesMarkdown() {
-        const base = this.mediaBasename || this.importedBasename || 'cues';
+        const base = this.getProjectTitle();
         const exportId = Math.max(1, Number(this.settings.ma3Id) || 101);
         const lines = [];
         lines.push(`# ${exportId}_${base} - Cue List`);
@@ -1855,7 +1869,7 @@ class MusicCueApp {
     }
 
     exportCuesPdf() {
-        const base = this.mediaBasename || this.importedBasename || 'cues';
+        const base = this.getProjectTitle();
         const exportId = Math.max(1, Number(this.settings.ma3Id) || 101);
         const sorted = [...this.cues].sort((a,b) => a.time - b.time);
         const rowsHtml = sorted.map((c, i) => {
@@ -1896,7 +1910,7 @@ h1{font-size:20px;margin:0 0 16px 0;}
     }
 
     generateMa3MacroXml() {
-        const base = this.mediaBasename || this.importedBasename || 'cues';
+        const base = this.getProjectTitle();
         const sorted = [...this.cues].sort((a, b) => a.time - b.time);
         if (!sorted.length) {
             return null;
@@ -2043,7 +2057,7 @@ h1{font-size:20px;margin:0 0 16px 0;}
     }
 
     exportMa3MacroXml() {
-        const base = this.mediaBasename || this.importedBasename || 'cues';
+        const base = this.getProjectTitle();
         const exportId = Math.max(1, Number(this.settings.ma3Id) || 101);
         const xml = this.generateMa3MacroXml();
         if (!xml) {
@@ -2327,7 +2341,7 @@ h1{font-size:20px;margin:0 0 16px 0;}
                 return;
             }
             const zip = new JSZip();
-            const base = this.mediaBasename || this.importedBasename || 'cues';
+            const base = this.getProjectTitle();
             const exportId = Math.max(1, Number(this.settings.ma3Id) || 101);
             // media
             if (this.uploadedFile) {
