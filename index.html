@@ -57,10 +57,16 @@
                         <button class="export-item" data-type="md">Export Markdown</button>
                         <button class="export-item" data-type="pdf">Export PDF</button>
                         <button class="export-item" data-type="sheet">Spreadsheet - CSV</button>
+                        <button class="export-item" data-type="ma3">MA3 Macro (XML)</button>
                         <button class="export-item" data-type="zip">Export Bundle (.zip)</button>
                     </div>
                 </div>
                 <button id="importCues" class="btn btn-secondary">Import</button>
+                <div class="project-badge" id="projectBadge" style="display:none;">
+                    <span class="badge-id" id="badgeId">ID 101</span>
+                    <span class="badge-sep">•</span>
+                    <span class="badge-track" id="badgeTrack">cues</span>
+                </div>
             </div>
         </div>
 
@@ -133,6 +139,16 @@
                     </div>
                     <div class="settings-content">
                         <div class="setting-group">
+                            <h4>Project ID</h4>
+                            <div class="setting-item">
+                                <label class="setting-label" style="flex-direction: column; align-items: flex-start;">
+                                    <span style="margin-bottom: 4px;">Export ID (default 101):</span>
+                                    <input type="number" id="ma3Id" value="101" min="1" style="width: 120px; padding: 4px 8px; border: 1px solid #4b5563; border-radius: 4px; background: #0f172a; color: #e5e7eb;">
+                                </label>
+                                <p class="setting-description">This ID prefixes export filenames and is used for MA3 by default</p>
+                            </div>
+                        </div>
+                        <div class="setting-group">
                             <h4>Playback Behavior</h4>
                             <div class="setting-item">
                                 <label class="setting-label">
@@ -181,6 +197,50 @@
                                     <span class="setting-text">Use fade times for cues</span>
                                 </label>
                                 <p class="setting-description">Automatically apply fade times to cues when importing or exporting</p>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <h4>MA3 Export Settings</h4>
+                            <div class="setting-item">
+                                <label class="setting-label" style="flex-direction: column; align-items: flex-start;">
+                                    <span style="margin-bottom: 4px;">Trigger Type:</span>
+                                    <select id="ma3Trigger" style="width: 140px; padding: 4px 8px; border: 1px solid #4b5563; border-radius: 4px; background: #0f172a; color: #e5e7eb;">
+                                        <option value="Go+">Go+</option>
+                                        <option value="Goto">Goto</option>
+                                    </select>
+                                </label>
+                                <p class="setting-description">Trigger type for timecode events in MA3 macro</p>
+                            </div>
+                            <div class="setting-item">
+                                <label class="setting-label">
+                                    <input type="checkbox" id="ma3OverrideEnabled">
+                                    <span class="setting-text">Override Export ID for MA3 Macro</span>
+                                </label>
+                                <p class="setting-description">When enabled, the MA3 macro can use a different ID (or separate IDs)</p>
+                            </div>
+                            <div class="setting-item" id="ma3OverrideBlock" style="display:none; flex-direction: column; gap:8px;">
+                                <label class="setting-label" style="flex-direction: column; align-items: flex-start;">
+                                    <span style="margin-bottom: 4px;">MA3 Override ID:</span>
+                                    <input type="number" id="ma3OverrideId" value="101" min="1" style="width: 120px; padding: 4px 8px; border: 1px solid #4b5563; border-radius: 4px; background: #0f172a; color: #e5e7eb;">
+                                </label>
+                                <label class="setting-label" style="margin-top:6px;">
+                                    <input type="checkbox" id="ma3UseSeparateIds">
+                                    <span class="setting-text">Use separate IDs for Sequence / Timecode / Page</span>
+                                </label>
+                                <div class="setting-item" id="ma3SeparateIdsRow" style="display:none; gap:12px;">
+                                    <label class="setting-label" style="flex-direction: column; align-items: flex-start;">
+                                        <span>Sequence ID</span>
+                                        <input type="number" id="ma3SeqId" value="101" min="1" style="width: 120px; padding: 4px 8px; border: 1px solid #4b5563; border-radius: 4px; background: #0f172a; color: #e5e7eb;">
+                                    </label>
+                                    <label class="setting-label" style="flex-direction: column; align-items: flex-start;">
+                                        <span>Timecode ID</span>
+                                        <input type="number" id="ma3TcId" value="101" min="1" style="width: 120px; padding: 4px 8px; border: 1px solid #4b5563; border-radius: 4px; background: #0f172a; color: #e5e7eb;">
+                                    </label>
+                                    <label class="setting-label" style="flex-direction: column; align-items: flex-start;">
+                                        <span>Page ID</span>
+                                        <input type="number" id="ma3PageId" value="101" min="1" style="width: 120px; padding: 4px 8px; border: 1px solid #4b5563; border-radius: 4px; background: #0f172a; color: #e5e7eb;">
+                                    </label>
+                                </div>
                             </div>
                         </div>
                         <div class="settings-actions">

@@ -1088,6 +1088,47 @@ input[type="file"] {
     border-color: rgba(245, 158, 11, 0.35);
     color: #92400e;
 }
+.theme-light #ma3Id,
+.theme-light #ma3Trigger,
+.theme-light #ma3OverrideId,
+.theme-light #ma3SeqId,
+.theme-light #ma3TcId,
+.theme-light #ma3PageId {
+    background: white !important;
+    color: #1f2937 !important;
+    border-color: #e0e0e0 !important;
+}
+.theme-light #ma3Id:focus,
+.theme-light #ma3Trigger:focus,
+.theme-light #ma3OverrideId:focus,
+.theme-light #ma3SeqId:focus,
+.theme-light #ma3TcId:focus,
+.theme-light #ma3PageId:focus {
+    border-color: #2196F3 !important;
+    outline: none;
+}
+
+/* Project badge */
+.project-badge {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    background: #0b1220;
+    color: #e5e7eb;
+}
+.badge-id {
+    font-weight: 600;
+    color: #93c5fd;
+}
+.badge-sep { opacity: 0.5; }
+.badge-track { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.theme-light .project-badge { background: #f9fafb; color: #111827; border-color: #e5e7eb; }
+.theme-light .badge-id { color: #1d4ed8; }
 
 /* Footer */
 .site-footer {
