@@ -91,6 +91,7 @@ showElementsRouter.post(
 showElementsRouter.patch(
   '/:elementId',
   asyncHandler(async (req, res) => {
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
     const element = await knex('show_elements').where({ id: req.params.elementId, track_id: req.params.trackId }).first();
     if (!element) throw notFound('Element not found');
     if (!isAuthorOf(req, element) && !req.capabilities.has('edit_others_cues')) throw forbidden('You cannot edit this element');
@@ -114,6 +115,7 @@ showElementsRouter.patch(
 showElementsRouter.delete(
   '/:elementId',
   asyncHandler(async (req, res) => {
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
     const element = await knex('show_elements').where({ id: req.params.elementId, track_id: req.params.trackId }).first();
     if (!element) throw notFound('Element not found');
     if (!isAuthorOf(req, element) && !req.capabilities.has('delete_others_cues')) throw forbidden('You cannot delete this element');

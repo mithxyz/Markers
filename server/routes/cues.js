@@ -214,6 +214,7 @@ cuesRouter.post(
 cuesRouter.patch(
   '/:cueId',
   asyncHandler(async (req, res) => {
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
     const cue = await knex('cues').where({ id: req.params.cueId, track_id: req.params.trackId }).whereNull('deleted_at').first();
     if (!cue) throw notFound('Cue not found');
     if (!canEditCue(req, cue)) throw forbidden('You cannot edit this cue');
@@ -276,6 +277,7 @@ cuesRouter.patch(
 cuesRouter.delete(
   '/:cueId',
   asyncHandler(async (req, res) => {
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
     const cue = await knex('cues').where({ id: req.params.cueId, track_id: req.params.trackId }).whereNull('deleted_at').first();
     if (!cue) throw notFound('Cue not found');
     if (!canDeleteCue(req, cue)) throw forbidden('You cannot delete this cue');

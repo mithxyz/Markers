@@ -34,18 +34,14 @@ async function send({ tag, email, url, subject, heading, intro, cta, ttlNote }) 
       </div>`,
     });
   } catch (err) {
-    // In dev the console log above is enough; in prod, log to activity_log so
-    // the failure is visible in the admin panel (Phase 11a).
     if (config.ses.logLinks) {
       console.warn(`[${tag}] SMTP send failed (link logged above):`, err.message);
       return;
     }
-    // Best-effort activity log — don't let a logging failure mask the real error.
-    logActivity({
-      entityType: 'mail',
-      action: 'send_failed',
-      next: { tag, email, error: err.message },
-    }).catch(() => {});
+    // Log to the journal so prod failures are immediately visible via
+    // `journalctl -u markers`. The activity_log table is project-scoped and
+    // cannot store mail failures (no project_id) — do not use logActivity here.
+    console.error('[mail] send_failed', { tag, email, error: err.message });
     throw err;
   }
 }

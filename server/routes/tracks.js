@@ -5,7 +5,7 @@ import { asyncHandler, badRequest, notFound } from '../lib/http.js';
 import { requireAuth } from '../middleware/auth.js';
 import { loadMembership, requireCapability } from '../middleware/membership.js';
 import { keys, safeExt } from '../lib/keys.js';
-import { presignPut, presignGet, headObject } from '../services/s3.js';
+import { presignPut, presignGet, headObject, deleteObject } from '../services/s3.js';
 import { getMediaQueue } from '../redis.js';
 import { logActivity } from '../lib/activity.js';
 import { emitToProject } from '../lib/realtime.js';
@@ -183,10 +183,26 @@ tracksRouter.delete(
   '/:trackId',
   requireCapability('manage_tracks'),
   asyncHandler(async (req, res) => {
-    const deleted = await knex('tracks').where({ id: req.params.trackId, project_id: req.project.id }).del();
-    if (!deleted) throw notFound('Track not found');
-    emitToProject(req, req.project.id, 'track:deleted', { trackId: req.params.trackId, byUserId: req.session.userId });
+    const track = await knex('tracks').where({ id: req.params.trackId, project_id: req.project.id }).first();
+    if (!track) throw notFound('Track not found');
+
+    // Gather all S3 keys before the cascade delete removes the DB rows.
+    const versions = await knex('track_versions').where({ track_id: track.id });
+    const videoLayers = await knex('video_layers').where({ track_id: track.id });
+
+    await knex('tracks').where({ id: track.id }).del();
+    emitToProject(req, req.project.id, 'track:deleted', { trackId: track.id, byUserId: req.session.userId });
     res.json({ ok: true });
+
+    // Best-effort S3 cleanup after the response is sent — never fail the delete.
+    const vKeys = versions.flatMap((v) => [
+      v.media_s3_key, v.media_web_s3_key, v.waveform_s3_key,
+      v.waveform_rgb_s3_key, v.spectrogram_s3_key,
+    ]);
+    const vidKeys = videoLayers.flatMap((vl) => [vl.video_s3_key, vl.filmstrip_s3_key]);
+    for (const k of [...vKeys, ...vidKeys]) {
+      if (k) deleteObject(k).catch((e) => console.warn('[s3] deleteObject failed', k, e.message));
+    }
   })
 );
 
@@ -248,8 +264,10 @@ tracksRouter.post(
   '/:trackId/versions/:versionId/complete',
   requireCapability('upload_media'),
   asyncHandler(async (req, res) => {
+    const track = await knex('tracks').where({ id: req.params.trackId, project_id: req.project.id }).first();
+    if (!track) throw notFound('Track not found');
     const version = await knex('track_versions')
-      .where({ id: req.params.versionId, track_id: req.params.trackId })
+      .where({ id: req.params.versionId, track_id: track.id })
       .first();
     if (!version) throw notFound('Version not found');
 
@@ -269,12 +287,13 @@ tracksRouter.post(
     // covers a track whose "current" version is still a never-uploaded metadata
     // placeholder (e.g. a Rekordbox import), which otherwise has no real audio to
     // preserve and would just leave real uploads stranded behind it.
-    const track = await knex('tracks').where({ id: version.track_id }).first();
-    const currentVersion = track.current_version_id
-      ? await knex('track_versions').where({ id: track.current_version_id }).first()
+    // Re-read to pick up updated fields (e.g. current_version_id set by concurrent uploads).
+    const trackRefetched = await knex('tracks').where({ id: track.id }).first();
+    const currentVersion = trackRefetched.current_version_id
+      ? await knex('track_versions').where({ id: trackRefetched.current_version_id }).first()
       : null;
     const currentIsPlaceholder = currentVersion && currentVersion.status === 'pending_upload' && !currentVersion.media_s3_key;
-    if (!track.current_version_id || currentIsPlaceholder) {
+    if (!trackRefetched.current_version_id || currentIsPlaceholder) {
       await knex('tracks').where({ id: track.id }).update({ current_version_id: version.id });
     }
 
@@ -397,8 +416,10 @@ tracksRouter.post(
   '/:trackId/versions/:versionId/reprocess',
   requireCapability('manage_versions'),
   asyncHandler(async (req, res) => {
+    const track = await knex('tracks').where({ id: req.params.trackId, project_id: req.project.id }).first();
+    if (!track) throw notFound('Track not found');
     const version = await knex('track_versions')
-      .where({ id: req.params.versionId, track_id: req.params.trackId })
+      .where({ id: req.params.versionId, track_id: track.id })
       .first();
     if (!version || !version.media_s3_key) throw notFound('Version not found');
 
@@ -442,8 +463,10 @@ tracksRouter.get(
 tracksRouter.get(
   '/:trackId/versions/:versionId/media',
   asyncHandler(async (req, res) => {
+    const track = await knex('tracks').where({ id: req.params.trackId, project_id: req.project.id }).first();
+    if (!track) throw notFound('Track not found');
     const version = await knex('track_versions')
-      .where({ id: req.params.versionId, track_id: req.params.trackId })
+      .where({ id: req.params.versionId, track_id: track.id })
       .first();
     if (!version || !version.media_s3_key) throw notFound('Media not found');
 
@@ -468,7 +491,9 @@ tracksRouter.patch(
   asyncHandler(async (req, res) => {
     const bpm = Number(req.body.bpm);
     if (!Number.isFinite(bpm) || bpm <= 0 || bpm > 400) throw badRequest('Invalid bpm');
-    const version = await knex('track_versions').where({ id: req.params.versionId, track_id: req.params.trackId }).first();
+    const track = await knex('tracks').where({ id: req.params.trackId, project_id: req.project.id }).first();
+    if (!track) throw notFound('Track not found');
+    const version = await knex('track_versions').where({ id: req.params.versionId, track_id: track.id }).first();
     if (!version) throw notFound('Version not found');
     if (version.bpm == null) await knex('track_versions').where({ id: version.id }).update({ bpm });
     res.json({ ok: true, bpm: version.bpm ?? bpm });

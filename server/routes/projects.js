@@ -9,7 +9,7 @@ import { systemRoleSeeds, ALL_CAPABILITIES } from '../lib/capabilities.js';
 import { logActivity } from '../lib/activity.js';
 import { listDepartments } from './departments.js';
 import { buildExportModel, ADAPTERS } from '../services/export.js';
-import { presignPut, presignGet, headObject } from '../services/s3.js';
+import { presignPut, presignGet, headObject, deleteObject } from '../services/s3.js';
 import { keys, safeExt } from '../lib/keys.js';
 
 const IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -232,8 +232,10 @@ projectsRouter.delete(
   loadMembership,
   requireCapability('manage_project'),
   asyncHandler(async (req, res) => {
+    const { image_s3_key } = req.project;
     await knex('projects').where({ id: req.project.id }).update({ image_s3_key: null, updated_at: knex.fn.now() });
     res.json({ ok: true });
+    if (image_s3_key) deleteObject(image_s3_key).catch((e) => console.warn('[s3] deleteObject failed', image_s3_key, e.message));
   })
 );
 

@@ -1,0 +1,16 @@
+# /root/markers/.backup-env.example
+# Copy to .backup-env and set mode 600:  chmod 600 .backup-env
+# The real .backup-env is gitignored.
+
+# Docker container name for the markers Postgres DB
+BACKUP_PG_CONTAINER=markers-postgres
+BACKUP_DB_USER=markers
+BACKUP_DB_NAME=markers
+BACKUP_DB_PASSWORD=REPLACE_WITH_REAL_PASSWORD
+
+# Scoped backup IAM user — policy: s3:PutObject + s3:GetObject + s3:ListBucket
+# restricted to the cue-markers bucket's backups/* prefix.
+BACKUP_AWS_ACCESS_KEY_ID=REPLACE_WITH_KEY_ID
+BACKUP_AWS_SECRET_ACCESS_KEY=REPLACE_WITH_SECRET
+BACKUP_AWS_REGION=ap-southeast-4
+BACKUP_S3_BUCKET=cue-markers

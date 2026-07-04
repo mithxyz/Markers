@@ -3,7 +3,7 @@ import { knex } from '../db/knex.js';
 import { asyncHandler, badRequest, notFound } from '../lib/http.js';
 import { requireAuth } from '../middleware/auth.js';
 import { loadMembership, requireCapability } from '../middleware/membership.js';
-import { presignPut, presignGet, headObject } from '../services/s3.js';
+import { presignPut, presignGet, headObject, deleteObject } from '../services/s3.js';
 import { keys, safeExt } from '../lib/keys.js';
 
 const IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -106,8 +106,10 @@ dancersRouter.delete(
   asyncHandler(async (req, res) => {
     const dancer = await knex('dancers').where({ id: req.params.dancerId, project_id: req.project.id }).first();
     if (!dancer) throw notFound('Dancer not found');
+    const { image_s3_key } = dancer;
     await knex('dancers').where({ id: dancer.id }).update({ image_s3_key: null, updated_at: knex.fn.now() });
     res.json({ ok: true });
+    if (image_s3_key) deleteObject(image_s3_key).catch((e) => console.warn('[s3] deleteObject failed', image_s3_key, e.message));
   })
 );
 

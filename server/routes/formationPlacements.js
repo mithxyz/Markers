@@ -90,8 +90,10 @@ formationPlacementsRouter.post(
 formationPlacementsRouter.patch(
   '/:placementId',
   asyncHandler(async (req, res) => {
+    const track = await trackInProject(req.params.trackId, req.project.id);
+    if (!track) throw notFound('Track not found');
     const placement = await knex('formation_placements')
-      .where({ id: req.params.placementId, track_id: req.params.trackId })
+      .where({ id: req.params.placementId, track_id: track.id })
       .first();
     if (!placement) throw notFound('Placement not found');
     if (!isAuthorOf(req, placement) && !req.capabilities.has('edit_others_cues')) {
@@ -105,7 +107,6 @@ formationPlacementsRouter.patch(
     if (req.body.end_beat !== undefined) fields.end_beat = req.body.end_beat === null ? null : Number(req.body.end_beat);
     if (!Object.keys(fields).length) throw badRequest('Nothing to update');
 
-    const track = await trackInProject(req.params.trackId, req.project.id);
     reconcile(fields, await currentVersionBpm(track));
 
     const [updated] = await knex('formation_placements')
@@ -121,6 +122,7 @@ formationPlacementsRouter.patch(
 formationPlacementsRouter.delete(
   '/:placementId',
   asyncHandler(async (req, res) => {
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
     const placement = await knex('formation_placements')
       .where({ id: req.params.placementId, track_id: req.params.trackId })
       .first();

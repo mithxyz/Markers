@@ -99,31 +99,38 @@ export async function rollbackVersion({ track, version, restoreCues, userId }) {
         .first();
       if (snap) {
         const restored = typeof snap.cues === 'string' ? JSON.parse(snap.cues) : snap.cues;
+
+        // Fallback lane for snapshots captured before lane_id was added (Phase 2b).
+        // Resolves once per rollback — the first cue_lane belonging to this track's project.
+        let defaultLaneId = null;
+        if (restored.some((c) => !c.lane_id)) {
+          const firstLane = await trx('cue_lanes')
+            .join('departments', 'cue_lanes.department_id', 'departments.id')
+            .join('tracks', 'tracks.project_id', 'departments.project_id')
+            .where('tracks.id', track.id)
+            .orderBy('departments.sort_order')
+            .orderBy('cue_lanes.sort_order')
+            .first('cue_lanes.id as id');
+          defaultLaneId = firstLane?.id ?? null;
+        }
+
         await trx('cues').where({ track_id: track.id }).del();
         if (restored.length) {
+          // Spread the full snapshot row so every column (including any added after
+          // this code was written) is preserved — never hand-list fields here.
+          // Only override the handful of managed fields.
           await trx('cues').insert(
-            restored.map((c) => ({
-              id: c.id,
-              track_id: track.id,
-              origin_version_id: c.origin_version_id,
-              cue_number: c.cue_number,
-              name: c.name,
-              time: c.time,
-              end_time: c.end_time,
-              start_beat: c.start_beat ?? null,
-              end_beat: c.end_beat ?? null,
-              description: c.description,
-              fade: c.fade,
-              marker_color: c.marker_color,
-              sort_order: c.sort_order,
-              lock_version: (c.lock_version || 0) + 1,
-              created_by: c.created_by,
-              updated_by: userId,
-              // Preserve per-marker ownership + visibility across rollback.
-              owner_id: c.owner_id ?? c.created_by ?? null,
-              visibility: c.visibility ?? 'public_edit',
-              anon_visible: c.anon_visible ?? false,
-            }))
+            restored.map((c) => {
+              const { created_at, updated_at, deleted_at, ...rest } = c;
+              return {
+                ...rest,
+                track_id: track.id,
+                lane_id: c.lane_id ?? defaultLaneId,
+                lock_version: (c.lock_version || 0) + 1,
+                updated_by: userId,
+                // Timestamp columns are set by the DB default; do not pass stale values.
+              };
+            })
           );
         }
         cues = await trx('cues').where({ track_id: track.id }).whereNull('deleted_at').orderBy('time');

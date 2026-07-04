@@ -76,6 +76,7 @@ markersRouter.post(
 markersRouter.patch(
   '/:markerId',
   asyncHandler(async (req, res) => {
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
     const marker = await knex('markers').where({ id: req.params.markerId, track_id: req.params.trackId }).first();
     if (!marker) throw notFound('Marker not found');
     if (!isAuthorOf(req, marker) && !req.capabilities.has('edit_others_cues')) throw forbidden('You cannot edit this marker');
@@ -97,6 +98,7 @@ markersRouter.patch(
 markersRouter.delete(
   '/:markerId',
   asyncHandler(async (req, res) => {
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
     const marker = await knex('markers').where({ id: req.params.markerId, track_id: req.params.trackId }).first();
     if (!marker) throw notFound('Marker not found');
     if (!isAuthorOf(req, marker) && !req.capabilities.has('delete_others_cues')) throw forbidden('You cannot delete this marker');

@@ -5,7 +5,7 @@ import { asyncHandler, badRequest, notFound } from '../lib/http.js';
 import { requireAuth } from '../middleware/auth.js';
 import { loadMembership, requireCapability } from '../middleware/membership.js';
 import { keys, safeExt } from '../lib/keys.js';
-import { presignPut, presignGet, headObject } from '../services/s3.js';
+import { presignPut, presignGet, headObject, deleteObject } from '../services/s3.js';
 import { emitToProject } from '../lib/realtime.js';
 import { getMediaQueue } from '../redis.js';
 
@@ -73,6 +73,7 @@ videoRouter.post(
   '/:videoId/complete',
   requireCapability('upload_media'),
   asyncHandler(async (req, res) => {
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
     const video = await knex('video_layers')
       .where({ id: req.params.videoId, track_id: req.params.trackId })
       .first();
@@ -108,6 +109,7 @@ videoRouter.patch(
   '/:videoId',
   requireCapability('upload_media'),
   asyncHandler(async (req, res) => {
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
     const patch = {};
     if (req.body.offset_seconds !== undefined) patch.offset_seconds = Number(req.body.offset_seconds) || 0;
     if (req.body.label !== undefined) patch.label = String(req.body.label).slice(0, 255);
@@ -135,10 +137,16 @@ videoRouter.delete(
   '/:videoId',
   requireCapability('upload_media'),
   asyncHandler(async (req, res) => {
-    const deleted = await knex('video_layers').where({ id: req.params.videoId, track_id: req.params.trackId }).del();
-    if (!deleted) throw notFound('Video not found');
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
+    const video = await knex('video_layers').where({ id: req.params.videoId, track_id: req.params.trackId }).first();
+    if (!video) throw notFound('Video not found');
+    await knex('video_layers').where({ id: video.id }).del();
     emitToProject(req, req.project.id, 'video:layer:updated', { trackId: req.params.trackId, byUserId: req.session.userId });
     res.json({ ok: true });
+    // Best-effort S3 cleanup after response.
+    for (const k of [video.video_s3_key, video.filmstrip_s3_key]) {
+      if (k) deleteObject(k).catch((e) => console.warn('[s3] deleteObject failed', k, e.message));
+    }
   })
 );
 
@@ -146,6 +154,7 @@ videoRouter.delete(
 videoRouter.get(
   '/:videoId/media',
   asyncHandler(async (req, res) => {
+    if (!(await trackInProject(req.params.trackId, req.project.id))) throw notFound('Track not found');
     const video = await knex('video_layers')
       .where({ id: req.params.videoId, track_id: req.params.trackId })
       .first();
