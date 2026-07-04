@@ -1,0 +1,45 @@
+import { Router } from 'express';
+import { authRouter } from './auth.js';
+import { projectsRouter } from './projects.js';
+import { teamsRouter } from './teams.js';
+import { membersRouter } from './members.js';
+import { rolesRouter } from './roles.js';
+import { departmentsRouter } from './departments.js';
+import { importsRouter } from './imports.js';
+import { dancersRouter } from './dancers.js';
+import { formationsRouter } from './formations.js';
+import { formationPlacementsRouter } from './formationPlacements.js';
+import { projectInvitesRouter, invitesRouter } from './invites.js';
+import { tracksRouter } from './tracks.js';
+import { cuesRouter } from './cues.js';
+import { markersRouter } from './markers.js';
+import { videoRouter } from './video.js';
+import { showElementsRouter } from './showElements.js';
+import { playlistsRouter } from './playlists.js';
+import { adminRouter } from './admin.js';
+import { publicRouter } from './public.js';
+
+export const apiRouter = Router();
+
+apiRouter.use('/auth', authRouter);
+apiRouter.use('/admin', adminRouter);
+apiRouter.use('/teams', teamsRouter);
+apiRouter.use('/projects', projectsRouter);
+apiRouter.use('/projects/:id/members', membersRouter);
+apiRouter.use('/projects/:id/roles', rolesRouter);
+apiRouter.use('/projects/:id/departments', departmentsRouter);
+apiRouter.use('/projects/:id/imports', importsRouter);
+apiRouter.use('/projects/:id/invites', projectInvitesRouter);
+apiRouter.use('/projects/:id/tracks', tracksRouter);
+apiRouter.use('/projects/:id/tracks/:trackId/cues', cuesRouter);
+apiRouter.use('/projects/:id/tracks/:trackId/markers', markersRouter);
+apiRouter.use('/projects/:id/dancers', dancersRouter);
+apiRouter.use('/projects/:id/formations', formationsRouter);
+apiRouter.use('/projects/:id/tracks/:trackId/formation-placements', formationPlacementsRouter);
+apiRouter.use('/projects/:id/tracks/:trackId/video', videoRouter);
+apiRouter.use('/projects/:id/tracks/:trackId/show-elements', showElementsRouter);
+apiRouter.use('/projects/:id/playlists', playlistsRouter);
+apiRouter.use('/invites', invitesRouter);
+apiRouter.use('/public', publicRouter);
+
+export default apiRouter;

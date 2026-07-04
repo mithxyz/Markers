@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: markers-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-markers}
+      POSTGRES_USER: ${DB_USER:-markers}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-markers_dev}
+    ports:
+      - "127.0.0.1:5441:5432"
+    volumes:
+      - markers-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-markers} -d ${DB_NAME:-markers}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: markers-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6381:6379"
+    volumes:
+      - markers-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  analyzer:
+    build: ./services/python
+    image: markers-analyzer
+    container_name: markers-analyzer
+    restart: unless-stopped
+    # Bound to loopback only; the host worker reaches it at http://127.0.0.1:8017
+    # (set ANALYZER_URL in .env). Container listens on 8000.
+    ports:
+      - "127.0.0.1:8017:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else sys.exit(1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  markers-pgdata:
+  markers-redisdata:

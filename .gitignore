@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+.backup-env
+client/build/
+client/.svelte-kit/
+**/dist/
+logs/
+*.log
+.DS_Store
+tmp/
+.claude/
+services/python/__pycache__/
+services/python/*.pyc
