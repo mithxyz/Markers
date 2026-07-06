@@ -30,8 +30,22 @@ export interface ResolvedPlacement {
   beat: number | null;
   end_time: number | null;
   end_beat: number | null;
+  ease?: string | null; // 11g: easing curve applied when leaving this placement
   positions: FormationPosition[];
   created_by: string | null;
+}
+
+/**
+ * Apply a CSS-style easing function to a linear 0..1 fraction (11g).
+ * Quad approximations that match the four standard CSS ease keywords.
+ */
+function applyEase(t: number, ease: string | null | undefined): number {
+  switch (ease) {
+    case 'ease-in':     return t * t;
+    case 'ease-out':    return t * (2 - t);
+    case 'ease-in-out': return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    default:            return t; // 'linear' or undefined
+  }
 }
 
 /**
@@ -72,7 +86,9 @@ export function interpolatePositions(
 
   const from = holdEnd(prev);
   const span = next.time - from;
-  const frac = span > 0 ? Math.min(1, Math.max(0, (time - from) / span)) : 0;
+  const rawFrac = span > 0 ? Math.min(1, Math.max(0, (time - from) / span)) : 0;
+  // 11g: apply the prev placement's easing curve (ease-in/out/in-out/linear).
+  const frac = applyEase(rawFrac, prev.ease);
   const prevMap = posMap(prev.positions);
   const nextMap = posMap(next.positions);
   const ids = new Set([...prevMap.keys(), ...nextMap.keys()]);

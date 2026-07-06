@@ -23,10 +23,25 @@
     updated_at: string;
   }
 
+  interface SystemLogEntry {
+    id: string;
+    source: string;
+    level: 'error' | 'warn' | 'info';
+    message: string;
+    meta: Record<string, unknown>;
+    created_at: string;
+  }
+  interface SystemStatus {
+    queue: Record<string, number>;
+    errors_last_24h: number;
+  }
+
   let users = $state<AdminUser[]>([]);
   let projects = $state<AdminProject[]>([]);
+  let systemLog = $state<SystemLogEntry[]>([]);
+  let systemStatus = $state<SystemStatus | null>(null);
   let loading = $state(true);
-  let tab = $state<'projects' | 'users'>('projects');
+  let tab = $state<'projects' | 'users' | 'system'>('projects');
 
   onMount(async () => {
     if (!auth.user) return goto('/login', { replaceState: true });
@@ -40,12 +55,16 @@
   async function refresh() {
     loading = true;
     try {
-      const [u, p] = await Promise.all([
+      const [u, p, sl, ss] = await Promise.all([
         api.get<{ users: AdminUser[] }>('/admin/users'),
         api.get<{ projects: AdminProject[] }>('/admin/projects'),
+        api.get<{ entries: SystemLogEntry[] }>('/admin/system-log?limit=50'),
+        api.get<SystemStatus>('/admin/system/status'),
       ]);
       users = u.users;
       projects = p.projects;
+      systemLog = sl.entries;
+      systemStatus = ss;
     } catch (e) {
       ui.toast((e as Error).message, 'error');
     } finally {
@@ -103,6 +122,9 @@
     <button onclick={() => (tab = 'users')} class="px-3 py-2 text-sm {tab === 'users' ? 'border-b-2 border-indigo-500 text-white' : 'text-neutral-400'}">
       Users ({users.length})
     </button>
+    <button onclick={() => (tab = 'system')} class="px-3 py-2 text-sm {tab === 'system' ? 'border-b-2 border-indigo-500 text-white' : 'text-neutral-400'}">
+      System {#if (systemStatus?.errors_last_24h ?? 0) > 0}<span class="ml-1 rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-400">{systemStatus?.errors_last_24h}</span>{/if}
+    </button>
   </div>
 
   {#if loading}
@@ -122,7 +144,7 @@
         </li>
       {/each}
     </ul>
-  {:else}
+  {:else if tab === 'users'}
     <ul class="mt-6 divide-y divide-neutral-800 rounded-xl border border-neutral-800">
       {#each users as u (u.id)}
         <li class="flex items-center justify-between px-4 py-3">
@@ -141,6 +163,40 @@
           </div>
         </li>
       {/each}
+    </ul>
+  {:else if tab === 'system'}
+    {#if systemStatus}
+      <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {#each Object.entries(systemStatus.queue) as [state, count] (state)}
+          <div class="rounded-xl border border-neutral-800 px-4 py-3">
+            <p class="text-xs uppercase tracking-wide text-neutral-500">{state}</p>
+            <p class="mt-1 text-xl font-semibold tabular-nums {state === 'failed' && count > 0 ? 'text-red-400' : 'text-white'}">{count}</p>
+          </div>
+        {/each}
+        <div class="rounded-xl border border-neutral-800 px-4 py-3 col-span-2 sm:col-span-1">
+          <p class="text-xs uppercase tracking-wide text-neutral-500">errors 24 h</p>
+          <p class="mt-1 text-xl font-semibold tabular-nums {systemStatus.errors_last_24h > 0 ? 'text-red-400' : 'text-emerald-400'}">{systemStatus.errors_last_24h}</p>
+        </div>
+      </div>
+    {/if}
+    <ul class="mt-6 divide-y divide-neutral-800 rounded-xl border border-neutral-800">
+      {#if systemLog.length === 0}
+        <li class="px-4 py-6 text-sm text-neutral-500">No system log entries.</li>
+      {:else}
+        {#each systemLog as e (e.id)}
+          <li class="px-4 py-3">
+            <div class="flex items-center gap-2">
+              <span class="shrink-0 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide font-medium
+                {e.level === 'error' ? 'bg-red-500/20 text-red-400' : e.level === 'warn' ? 'bg-amber-500/20 text-amber-300' : 'bg-neutral-700 text-neutral-400'}">
+                {e.level}
+              </span>
+              <span class="shrink-0 text-xs text-neutral-500">{e.source}</span>
+              <span class="min-w-0 truncate text-sm text-white">{e.message}</span>
+              <span class="ml-auto shrink-0 text-xs text-neutral-600">{new Date(e.created_at).toLocaleString()}</span>
+            </div>
+          </li>
+        {/each}
+      {/if}
     </ul>
   {/if}
 </div>

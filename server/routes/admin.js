@@ -4,6 +4,7 @@ import { asyncHandler, badRequest, notFound, conflict } from '../lib/http.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { issueAuthToken } from './auth.js';
 import { sendSetPassword } from '../services/mail.js';
+import { getMediaQueue } from '../redis.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAdmin);
@@ -103,6 +104,35 @@ adminRouter.delete(
     const deleted = await knex('users').where({ id: req.params.id }).del();
     if (!deleted) throw notFound('User not found');
     res.json({ ok: true });
+  })
+);
+
+/** GET /admin/system-log?source=&level=&limit= — recent system_log entries (H1-C). */
+adminRouter.get(
+  '/system-log',
+  asyncHandler(async (req, res) => {
+    const limit = Math.min(Number(req.query.limit) || 100, 500);
+    const q = knex('system_log').orderBy('created_at', 'desc').limit(limit);
+    if (req.query.source) q.where({ source: String(req.query.source) });
+    if (req.query.level) q.where({ level: String(req.query.level) });
+    const rows = await q;
+    res.json({ entries: rows });
+  })
+);
+
+/** GET /admin/system/status — queue depth + recent failure counts (H1-C). */
+adminRouter.get(
+  '/system/status',
+  asyncHandler(async (req, res) => {
+    const [queueCounts, recentErrors] = await Promise.all([
+      getMediaQueue().getJobCounts('waiting', 'active', 'failed', 'completed'),
+      knex('system_log')
+        .where({ level: 'error' })
+        .where('created_at', '>', knex.raw("now() - interval '24 hours'"))
+        .count('id as c')
+        .first(),
+    ]);
+    res.json({ queue: queueCounts, errors_last_24h: Number(recentErrors?.c ?? 0) });
   })
 );
 

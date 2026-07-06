@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config.js';
 import { logActivity } from '../lib/activity.js';
+import { logSystem } from '../lib/systemLog.js';
 
 // The VPS runs Postfix + OpenDKIM with mith.studio fully configured
 // (SPF + DKIM valid), so we send straight through the local mail server —
@@ -38,10 +39,15 @@ async function send({ tag, email, url, subject, heading, intro, cta, ttlNote }) 
       console.warn(`[${tag}] SMTP send failed (link logged above):`, err.message);
       return;
     }
-    // Log to the journal so prod failures are immediately visible via
-    // `journalctl -u markers`. The activity_log table is project-scoped and
+    // Log to journal and system_log (H1-C). activity_log is project-scoped and
     // cannot store mail failures (no project_id) — do not use logActivity here.
     console.error('[mail] send_failed', { tag, email, error: err.message });
+    await logSystem({
+      source: 'mail',
+      level: 'error',
+      message: `send_failed [${tag}] to ${email}: ${err.message.slice(0, 400)}`,
+      meta: { tag, email },
+    });
     throw err;
   }
 }

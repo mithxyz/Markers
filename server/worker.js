@@ -10,6 +10,8 @@ import { downloadToFile, putObject } from './services/s3.js';
 import { probeDuration, generateDetailedPeaks, buildWaveformRgb, transcodeToWav } from './services/waveform.js';
 import { generateFilmstrip, generateSpectrogram } from './services/artifacts.js';
 import { analyzeRhythm } from './services/rhythm.js';
+import { recomputeCueBeats } from './lib/beats.js';
+import { logSystem } from './lib/systemLog.js';
 import { presignGet } from './services/s3.js';
 
 /**
@@ -124,17 +126,11 @@ async function processMedia(job) {
       updated_at: knex.fn.now(),
     });
 
-    // Phase 2a: once a BPM is known, backfill beat positions for cues on a track
-    // currently showing this version that don't have them yet. Non-destructive —
-    // only fills NULLs, never moves cues already positioned by beat.
+    // Phase 2a / H1-B: recompute beat positions for ALL cues after a BPM write.
+    // Previously guarded by WHERE start_beat IS NULL — dropped so a reprocess
+    // that changes BPM doesn't leave existing cues drifted against the new grid.
     if (rhythm?.bpm > 0) {
-      await knex('cues')
-        .whereIn('track_id', knex('tracks').where({ current_version_id: versionId }).select('id'))
-        .whereNull('start_beat')
-        .update({
-          start_beat: knex.raw('time * (? / 60.0)', [rhythm.bpm]),
-          end_beat: knex.raw('CASE WHEN end_time IS NOT NULL THEN end_time * (? / 60.0) ELSE NULL END', [rhythm.bpm]),
-        });
+      await recomputeCueBeats(knex, versionId, rhythm.bpm);
     }
 
     await publishReady(projectId, { versionId, trackId, status: 'ready', duration });
@@ -150,6 +146,12 @@ async function processMedia(job) {
         .where({ id: versionId })
         .update({ status: 'failed', error_message: err.message.slice(0, 500) });
       await publishReady(projectId, { versionId, trackId, status: 'failed' });
+      await logSystem({
+        source: 'worker',
+        level: 'error',
+        message: `process-media failed for version ${versionId}: ${err.message.slice(0, 400)}`,
+        meta: { versionId, trackId, projectId, attempts: job.attemptsMade + 1 },
+      });
     }
     throw err;
   } finally {
@@ -209,6 +211,12 @@ async function processFilmstrip(job) {
   } catch (err) {
     // Filmstrips are best-effort — log and move on, never fail the layer.
     console.warn(`[worker] filmstrip for layer ${videoLayerId} failed:`, err.message);
+    await logSystem({
+      source: 'worker',
+      level: 'warn',
+      message: `filmstrip failed for video layer ${videoLayerId}: ${err.message.slice(0, 400)}`,
+      meta: { videoLayerId, trackId, projectId },
+    });
     return { ok: false };
   } finally {
     await unlink(tmpFile).catch(() => {});
@@ -245,7 +253,15 @@ const worker = new Worker(MEDIA_QUEUE, processJob, {
 });
 
 worker.on('ready', () => console.log(`[worker] listening on queue "${MEDIA_QUEUE}"`));
-worker.on('failed', (job, err) => console.error(`[worker] job ${job?.id} failed:`, err.message));
+worker.on('failed', (job, err) => {
+  console.error(`[worker] job ${job?.id} failed:`, err.message);
+  logSystem({
+    source: 'worker',
+    level: 'error',
+    message: `job ${job?.id} (${job?.name ?? 'unknown'}) failed: ${err.message.slice(0, 400)}`,
+    meta: { jobId: job?.id, jobName: job?.name, data: job?.data },
+  });
+});
 
 async function shutdown(signal) {
   console.log(`[worker] ${signal} received, shutting down`);

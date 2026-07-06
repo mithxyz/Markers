@@ -17,6 +17,8 @@
     onReassign,
     onResize,
     onSelectPlacement,
+    onMovePlacement,
+    onResizePlacement,
   }: {
     cues: Cue[];
     departments: Department[];
@@ -31,6 +33,8 @@
     onReassign?: (cue: Cue, laneId: string) => void;
     onResize?: (cue: Cue, endTime: number) => void;
     onSelectPlacement?: (p: FormationPlacement) => void;
+    onMovePlacement?: (p: FormationPlacement, time: number) => void;    // 11g
+    onResizePlacement?: (p: FormationPlacement, endTime: number) => void; // 11g
   } = $props();
 
   const showFormations = $derived(placements.length > 0);
@@ -61,6 +65,8 @@
   });
 
   let drag = $state<{ cue: Cue; mode: 'move' | 'resize'; time: number; endTime: number | null; deptId: string } | null>(null);
+  // 11g: separate drag state for formation placement bars
+  let placementDrag = $state<{ placement: FormationPlacement; mode: 'move' | 'resize'; time: number; endTime: number | null } | null>(null);
 
   // clientX → time via the inner element's on-screen rect (accounts for scroll).
   const timeAt = (clientX: number) => {
@@ -116,6 +122,40 @@
     if (!moved && !reassigned) onSelect?.(d.cue); // treat as a click
   }
 
+  // 11g: drag/resize for formation placement bars (mirrors the cue drag pattern).
+  function startPlacementDrag(e: PointerEvent, p: FormationPlacement, mode: 'move' | 'resize') {
+    if (!editable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    placementDrag = { placement: p, mode, time: p.time, endTime: p.end_time };
+    window.addEventListener('pointermove', onPlacementMoveEvt);
+    window.addEventListener('pointerup', onPlacementUp);
+  }
+  function onPlacementMoveEvt(e: PointerEvent) {
+    if (!placementDrag) return;
+    if (placementDrag.mode === 'resize') {
+      placementDrag.endTime = Math.max(placementDrag.time + 0.05, timeAt(e.clientX));
+    } else {
+      const dt = timeAt(e.clientX);
+      const span = placementDrag.placement.end_time != null ? placementDrag.placement.end_time - placementDrag.placement.time : 0;
+      placementDrag.time = dt;
+      placementDrag.endTime = placementDrag.placement.end_time != null ? dt + span : null;
+    }
+  }
+  function onPlacementUp(_e: PointerEvent) {
+    window.removeEventListener('pointermove', onPlacementMoveEvt);
+    window.removeEventListener('pointerup', onPlacementUp);
+    const d = placementDrag;
+    placementDrag = null;
+    if (!d) return;
+    if (d.mode === 'resize') {
+      if (d.endTime != null && Math.abs(d.endTime - (d.placement.end_time ?? d.placement.time)) > 0.02) onResizePlacement?.(d.placement, d.endTime);
+      return;
+    }
+    if (Math.abs(d.time - d.placement.time) > 0.02) onMovePlacement?.(d.placement, d.time);
+    else onSelectPlacement?.(d.placement); // treat as a click if no movement
+  }
+
   function geomOf(cue: Cue) {
     if (drag && drag.cue.id === cue.id) return { time: drag.time, endTime: drag.endTime, deptId: drag.deptId };
     return { time: cue.time, endTime: cue.end_time, deptId: laneToDept.get(cue.lane_id) ?? '' };
@@ -147,17 +187,25 @@
       {#if showFormations}
         <div class="relative h-8 border-b border-neutral-900">
           {#each placements as p (p.id)}
-            {@const left = t01(p.time) * contentW}
-            {@const w = p.end_time != null && p.end_time > p.time ? Math.max(3, (t01(p.end_time) - t01(p.time)) * contentW) : 4}
+            {@const pd = placementDrag?.placement.id === p.id ? placementDrag : null}
+            {@const dispTime = pd ? pd.time : p.time}
+            {@const dispEnd = pd ? pd.endTime : p.end_time}
+            {@const left = t01(dispTime) * contentW}
+            {@const w = dispEnd != null && dispEnd > dispTime ? Math.max(3, (t01(dispEnd) - t01(dispTime)) * contentW) : 4}
             {@const defName = defById.get(p.formation_id)?.name ?? ''}
-            <button
-              class="absolute top-1.5 bottom-1.5 cursor-pointer overflow-hidden rounded-sm border border-violet-700/60 bg-violet-600/30 px-1 text-left text-[10px] text-violet-200 hover:bg-violet-600/50 hover:ring-1 hover:ring-violet-400/60"
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="absolute top-1.5 bottom-1.5 overflow-hidden rounded-sm border border-violet-700/60 bg-violet-600/30 px-1 text-left text-[10px] text-violet-200 {editable ? 'cursor-grab' : 'cursor-pointer'} {pd ? 'ring-1 ring-violet-300' : 'hover:bg-violet-600/50 hover:ring-1 hover:ring-violet-400/60'}"
               style="left: {left}px; width: {w}px; min-width: 4px;"
-              title="{defName} · {p.time.toFixed(2)}s{p.end_time != null ? ` – ${p.end_time.toFixed(2)}s` : ''}"
-              onclick={() => onSelectPlacement?.(p)}
+              title="{defName} · {dispTime.toFixed(2)}s{dispEnd != null ? ` – ${dispEnd.toFixed(2)}s` : ''}"
+              onpointerdown={(e) => (editable ? startPlacementDrag(e, p, 'move') : onSelectPlacement?.(p))}
             >
-              {#if w > 20}<span class="truncate">{defName}</span>{/if}
-            </button>
+              {#if w > 20}<span class="pointer-events-none truncate">{defName}</span>{/if}
+              {#if editable && p.end_time != null}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <span class="absolute right-0 top-0 h-full w-1.5 cursor-ew-resize bg-white/30" onpointerdown={(e) => startPlacementDrag(e, p, 'resize')}></span>
+              {/if}
+            </div>
           {/each}
         </div>
       {/if}

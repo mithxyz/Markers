@@ -81,6 +81,7 @@ export interface FormationPlacement {
   beat: number | null;
   end_time: number | null;
   end_beat: number | null;
+  ease?: string | null; // 11g: transition easing curve out of this placement
   created_by: string | null;
 }
 

@@ -62,4 +62,27 @@ export function reconcileBeatTime(fields, bpm, existing = null) {
   return fields;
 }
 
-export default { timeToBeat, beatToTime, currentVersionBpm, reconcileBeatTime };
+/**
+ * Recompute start_beat/end_beat for ALL cues on the track currently showing
+ * versionId, using the canonical formula `beat = time × bpm/60`.
+ *
+ * Called after worker.js writes a fresh BPM from BeatNet analysis, and when
+ * the provisional BPM PATCH route first seeds a BPM. Drops the old
+ * "WHERE start_beat IS NULL" guard so a reprocess that changes BPM never
+ * leaves existing cues drifted against the new grid (H1-B beat-drift fix).
+ *
+ * @param {import('knex').Knex | import('knex').Knex.Transaction} db
+ * @param {string} versionId
+ * @param {number} bpm
+ */
+export async function recomputeCueBeats(db, versionId, bpm) {
+  if (!(bpm > 0)) return;
+  await db('cues')
+    .whereIn('track_id', db('tracks').where({ current_version_id: versionId }).select('id'))
+    .update({
+      start_beat: db.raw('time * (? / 60.0)', [bpm]),
+      end_beat: db.raw('CASE WHEN end_time IS NOT NULL THEN end_time * (? / 60.0) ELSE NULL END', [bpm]),
+    });
+}
+
+export default { timeToBeat, beatToTime, currentVersionBpm, reconcileBeatTime, recomputeCueBeats };

@@ -1,10 +1,88 @@
 import { Router } from 'express';
+import express from 'express';
 import { knex } from '../db/knex.js';
 import { asyncHandler, badRequest, notFound, forbidden, conflict } from '../lib/http.js';
 import { requireAuth } from '../middleware/auth.js';
 import { loadMembership, requireCapability } from '../middleware/membership.js';
 import { emitCueCreated, emitCueUpdated, emitCueDeleted } from '../lib/realtime.js';
 import { currentVersionBpm, reconcileBeatTime } from '../lib/beats.js';
+import { emitToProject } from '../lib/realtime.js';
+
+/** Parse "M:SS.cc" or "H:MM:SS.cc" clock strings back to seconds (matches export.js clock()). */
+function parseClock(s) {
+  if (!s || !s.trim()) return null;
+  // Try float first (raw seconds)
+  const f = Number(s);
+  if (Number.isFinite(f) && !/[:]/.test(s)) return f >= 0 ? f : null;
+  // M:SS.cc or H:MM:SS.cc
+  const parts = String(s).split(':');
+  if (parts.length === 2) {
+    const [m, ss] = parts;
+    const sec = Number(m) * 60 + Number(ss);
+    return Number.isFinite(sec) && sec >= 0 ? sec : null;
+  }
+  if (parts.length === 3) {
+    const [h, m, ss] = parts;
+    const sec = Number(h) * 3600 + Number(m) * 60 + Number(ss);
+    return Number.isFinite(sec) && sec >= 0 ? sec : null;
+  }
+  return null;
+}
+
+/** Parse a CSV text body into an array of header-keyed objects. */
+function parseCSV(text) {
+  const lines = String(text || '').replace(/\r\n/g, '\n').split('\n').filter((l) => l.trim());
+  if (!lines.length) return [];
+  const unquote = (cell) => {
+    cell = cell.trim();
+    if (cell.startsWith('"') && cell.endsWith('"')) cell = cell.slice(1, -1).replace(/""/g, '"');
+    return cell;
+  };
+  const splitRow = (line) => {
+    const cells = [];
+    let cur = '';
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+        else if (ch === '"') inQ = false;
+        else cur += ch;
+      } else if (ch === '"') { inQ = true; }
+      else if (ch === ',') { cells.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    cells.push(cur);
+    return cells.map(unquote);
+  };
+  const header = splitRow(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, '_'));
+  return lines.slice(1).map((line) => {
+    const cells = splitRow(line);
+    const row = {};
+    header.forEach((h, i) => { row[h] = cells[i] ?? ''; });
+    return row;
+  });
+}
+
+/** Find or create a department+lane by name within a project (for CSV import). */
+async function findOrCreateLane(projectId, deptName, laneName, trx) {
+  const dName = (deptName || 'CSV Import').trim().slice(0, 255) || 'CSV Import';
+  const lName = (laneName || dName).trim().slice(0, 255) || dName;
+  let dept = await trx('departments').where({ project_id: projectId }).whereRaw('lower(name) = lower(?)', [dName]).first();
+  if (!dept) {
+    const maxSort = await trx('departments').where({ project_id: projectId }).max('sort_order as m').first();
+    [dept] = await trx('departments')
+      .insert({ project_id: projectId, name: dName, color: '#6366f1', sort_order: (maxSort?.m ?? -1) + 1 })
+      .returning('*');
+  }
+  let lane = await trx('cue_lanes').where({ department_id: dept.id }).whereRaw('lower(name) = lower(?)', [lName]).first();
+  if (!lane) {
+    [lane] = await trx('cue_lanes')
+      .insert({ department_id: dept.id, name: lName, kind: 'cues', sort_order: 0 })
+      .returning('*');
+  }
+  return lane.id;
+}
 
 export const cuesRouter = Router({ mergeParams: true });
 cuesRouter.use(requireAuth, loadMembership);
@@ -152,6 +230,101 @@ cuesRouter.get(
     }
     const cues = await q.orderBy('time');
     res.json({ cues });
+  })
+);
+
+/**
+ * POST /projects/:id/tracks/:trackId/cues/import — bulk CSV cue import (11f).
+ * Accepts the CSV column shape exported by services/export.js csvAdapter so that
+ * export→import round-trips cleanly. Returns { imported, errors }.
+ *
+ * Capability: create_cues. The track must belong to this project (trackInProject guard).
+ * Departments/lanes referenced in the CSV are created on-demand if they don't exist.
+ * Beat/time coordinates are reconciled via reconcileBeatTime + currentVersionBpm.
+ */
+cuesRouter.post(
+  '/import',
+  requireCapability('create_cues'),
+  express.text({ type: '*/*', limit: '4mb' }),
+  asyncHandler(async (req, res) => {
+    const track = await trackInProject(req.params.trackId, req.project.id);
+    if (!track) throw notFound('Track not found');
+
+    const rows = parseCSV(typeof req.body === 'string' ? req.body : '');
+    if (!rows.length) throw badRequest('No CSV rows found');
+
+    const bpm = await currentVersionBpm(track.id);
+    const errors = [];
+    const inserts = [];
+
+    // Cache lane lookups within this import so repeated dept+lane combos don't hit the DB N times.
+    const laneCache = new Map();
+    async function getLane(dept, lane) {
+      const key = `${dept}||${lane}`;
+      if (!laneCache.has(key)) laneCache.set(key, await findOrCreateLane(req.project.id, dept, lane, knex));
+      return laneCache.get(key);
+    }
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const rowNum = i + 2; // 1-indexed, +1 for header
+      try {
+        // Time is required (start_beat can be derived, but we need at least one anchor).
+        const rawTime = parseClock(r.start_time);
+        const rawStartBeat = r.start_beat ? Number(r.start_beat) : null;
+        if (rawTime == null && rawStartBeat == null) {
+          errors.push({ row: rowNum, message: 'start_time or start_beat required' });
+          continue;
+        }
+
+        const rawEndTime = r.end_time ? parseClock(r.end_time) : null;
+        const rawEndBeat = r.end_beat ? Number(r.end_beat) : null;
+
+        // Build the fields object and let reconcileBeatTime fill the missing coordinate.
+        const fields = {};
+        if (rawTime != null) fields.time = rawTime; else fields.time = 0;
+        if (rawStartBeat != null) fields.start_beat = rawStartBeat;
+        if (rawEndTime != null) fields.end_time = rawEndTime;
+        if (rawEndBeat != null) fields.end_beat = rawEndBeat;
+        reconcileBeatTime(fields, bpm);
+
+        const laneId = await getLane(r.department, r.lane);
+        inserts.push({
+          track_id: track.id,
+          lane_id: laneId,
+          name: (r.name || 'Cue').slice(0, 255),
+          time: fields.time,
+          end_time: fields.end_time ?? null,
+          start_beat: fields.start_beat ?? null,
+          end_beat: fields.end_beat ?? null,
+          status: r.status || null,
+          marker_color: /^#[0-9a-f]{6}$/i.test(r.color || '') ? r.color : '#ff4444',
+          color_inherited: !/^#[0-9a-f]{6}$/i.test(r.color || ''),
+          osc_address: r.osc_address || null,
+          osc_value: r.osc_value || null,
+          automation: r.automation || null,
+          notes: r.notes || null,
+          visibility: 'public_edit',
+          owner_id: req.session.userId,
+          created_by: req.session.userId,
+          updated_by: req.session.userId,
+          source: 'csv',
+          origin_version_id: track.current_version_id ?? null,
+        });
+      } catch (err) {
+        errors.push({ row: rowNum, message: err.message });
+      }
+    }
+
+    if (inserts.length) await knex('cues').insert(inserts);
+
+    emitToProject(req, req.project.id, 'import:completed', {
+      source: 'csv',
+      imported: inserts.length,
+      byUserId: req.session.userId,
+    });
+
+    res.status(201).json({ imported: inserts.length, errors });
   })
 );
 

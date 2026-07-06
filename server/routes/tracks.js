@@ -10,6 +10,7 @@ import { getMediaQueue } from '../redis.js';
 import { logActivity } from '../lib/activity.js';
 import { emitToProject } from '../lib/realtime.js';
 import { activateVersion, rollbackVersion, needsRealign } from '../services/versions.js';
+import { recomputeCueBeats } from '../lib/beats.js';
 
 export const tracksRouter = Router({ mergeParams: true });
 tracksRouter.use(requireAuth, loadMembership);
@@ -49,6 +50,7 @@ tracksRouter.post(
         kind,
         sort_order: (maxOrder?.m ?? -1) + 1,
         created_by: req.session.userId,
+        owner_id: req.session.userId, // 11e: creator is the initial owner
       })
       .returning('*');
 
@@ -77,6 +79,18 @@ tracksRouter.patch(
     // 10-meta: free-text ID number and notes
     if (req.body.id_number !== undefined) patch.id_number = req.body.id_number === null ? null : (String(req.body.id_number).trim().slice(0, 64) || null);
     if (req.body.notes !== undefined) patch.notes = req.body.notes === null ? null : (String(req.body.notes).slice(0, 10000) || null);
+    // 11e: owner reassign (manage_tracks required, which is already checked above)
+    if (req.body.owner_id !== undefined) {
+      if (req.body.owner_id === null) {
+        patch.owner_id = null;
+      } else {
+        const isMember = await knex('project_members')
+          .where({ project_id: req.project.id, user_id: req.body.owner_id })
+          .first();
+        if (!isMember) throw badRequest('owner_id must be a member of this project');
+        patch.owner_id = req.body.owner_id;
+      }
+    }
     if (!Object.keys(patch).length) throw badRequest('Nothing to update');
     patch.updated_at = knex.fn.now();
 
@@ -495,7 +509,11 @@ tracksRouter.patch(
     if (!track) throw notFound('Track not found');
     const version = await knex('track_versions').where({ id: req.params.versionId, track_id: track.id }).first();
     if (!version) throw notFound('Version not found');
-    if (version.bpm == null) await knex('track_versions').where({ id: version.id }).update({ bpm });
+    if (version.bpm == null) {
+      await knex('track_versions').where({ id: version.id }).update({ bpm });
+      // H1-B: seed beat positions now that we have a first BPM estimate.
+      await recomputeCueBeats(knex, version.id, bpm);
+    }
     res.json({ ok: true, bpm: version.bpm ?? bpm });
   })
 );

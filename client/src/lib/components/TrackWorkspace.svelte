@@ -716,6 +716,43 @@
     }
   }
 
+  // 11g: move a PLACEMENT bar in time (drag from LaneStrip).
+  async function movePlacement(p: FormationPlacement, time: number) {
+    try {
+      const { placement } = await api.patch<{ placement: FormationPlacement }>(
+        `${base}/formation-placements/${p.id}`,
+        { time, ...(p.end_time != null ? { end_time: time + (p.end_time - p.time) } : {}) }
+      );
+      placements = placements.map((x) => (x.id === placement.id ? placement : x));
+    } catch (e) {
+      ui.toast((e as Error).message, 'error');
+    }
+  }
+
+  // 11g: resize a PLACEMENT bar (drag right edge in LaneStrip).
+  async function resizePlacement(p: FormationPlacement, endTime: number) {
+    try {
+      const { placement } = await api.patch<{ placement: FormationPlacement }>(
+        `${base}/formation-placements/${p.id}`, { end_time: endTime }
+      );
+      placements = placements.map((x) => (x.id === placement.id ? placement : x));
+    } catch (e) {
+      ui.toast((e as Error).message, 'error');
+    }
+  }
+
+  // 11g: set transition easing for a PLACEMENT.
+  async function setPlacementEase(p: FormationPlacement, ease: string) {
+    try {
+      const { placement } = await api.patch<{ placement: FormationPlacement }>(
+        `${base}/formation-placements/${p.id}`, { ease }
+      );
+      placements = placements.map((x) => (x.id === placement.id ? placement : x));
+    } catch (e) {
+      ui.toast((e as Error).message, 'error');
+    }
+  }
+
   // Drag a token within the selected def: optimistic overlay + debounced PATCH to the def.
   // Patching the definition updates all placements of this formation everywhere.
   let formationSaveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1061,6 +1098,8 @@
             onReassign={reassignCueLane}
             onResize={resizeCue}
             onSelectPlacement={(p) => { selectedPlacementId = p.id; wave?.seekTo(p.time); currentTime = p.time; }}
+            onMovePlacement={movePlacement}
+            onResizePlacement={resizePlacement}
           />
         </div>
       {/if}
@@ -1107,6 +1146,21 @@
                 {:else}
                   <button onclick={() => selectedPlacement && setPlacementHold(selectedPlacement, currentTime)} title="Hold this placement until the playhead, then transition" class="rounded border border-neutral-700 px-1.5 py-0.5 hover:bg-neutral-800">Hold to playhead</button>
                 {/if}
+                <!-- 11g: transition easing picker -->
+                {#if canEdit}
+                  <span class="text-neutral-600">ease:</span>
+                  <select
+                    value={selectedPlacement.ease ?? 'linear'}
+                    onchange={(e) => selectedPlacement && setPlacementEase(selectedPlacement, e.currentTarget.value)}
+                    class="rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[11px] text-neutral-200"
+                    title="Transition easing curve"
+                  >
+                    <option value="linear">linear</option>
+                    <option value="ease-in">ease-in</option>
+                    <option value="ease-out">ease-out</option>
+                    <option value="ease-in-out">ease-in-out</option>
+                  </select>
+                {/if}
                 <button onclick={() => (selectedPlacementId = null)} class="rounded border border-neutral-700 px-2 py-0.5 hover:bg-neutral-800">Done</button>
               {:else}
                 <span class="text-neutral-600">{placements.length ? 'Press play to animate · select a placement to edit' : 'No formations placed yet'}</span>
@@ -1143,6 +1197,42 @@
     </div>
     <div class="flex flex-col gap-4">
       <div class="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3">
+        {#if canEdit}
+          <!-- 11f: CSV cue import -->
+          <div class="mb-2 flex justify-end px-1">
+            <label class="cursor-pointer text-[11px] text-neutral-500 hover:text-indigo-400" title="Import cues from CSV (exported by the Download button)">
+              ↑ Import CSV
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                class="sr-only"
+                onchange={async (e) => {
+                  const file = e.currentTarget.files?.[0];
+                  if (!file) return;
+                  try {
+                    const text = await file.text();
+                    const res = await fetch(`/api/v1${base}/cues/import`, {
+                      method: 'POST',
+                      credentials: 'include',
+                      headers: { 'Content-Type': 'text/plain' },
+                      body: text,
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data?.error || res.statusText);
+                    const result = data as { imported: number; errors: { row: number; message: string }[] };
+                    const errTxt = result.errors.length ? ` (${result.errors.length} skipped)` : '';
+                    ui.toast(`Imported ${result.imported} cue${result.imported === 1 ? '' : 's'}${errTxt}`, result.errors.length ? 'info' : 'success');
+                    // Cues arrive via socket refresh; also trigger a local reload.
+                    cues = (await api.get<{ cues: typeof cues }>(`${base}/cues`)).cues;
+                  } catch (err) {
+                    ui.toast((err as Error).message, 'error');
+                  }
+                  e.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+        {/if}
         <CueList
           cues={visibleCues}
           {selectedCueId}

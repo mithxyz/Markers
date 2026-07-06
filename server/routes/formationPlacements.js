@@ -100,11 +100,17 @@ formationPlacementsRouter.patch(
       throw forbidden('You cannot edit this placement');
     }
 
+    const EASE_VALUES = ['linear', 'ease-in', 'ease-out', 'ease-in-out'];
     const fields = {};
     if (req.body.time !== undefined) fields.time = Number(req.body.time) || 0;
     if (req.body.beat != null) fields.beat = Number(req.body.beat);
     if (req.body.end_time !== undefined) fields.end_time = req.body.end_time === null ? null : Number(req.body.end_time);
     if (req.body.end_beat !== undefined) fields.end_beat = req.body.end_beat === null ? null : Number(req.body.end_beat);
+    // 11g: easing curve for the outgoing transition from this placement
+    if (req.body.ease !== undefined) {
+      if (!EASE_VALUES.includes(req.body.ease)) throw badRequest(`ease must be one of: ${EASE_VALUES.join(', ')}`);
+      fields.ease = req.body.ease;
+    }
     if (!Object.keys(fields).length) throw badRequest('Nothing to update');
 
     reconcile(fields, await currentVersionBpm(track));
